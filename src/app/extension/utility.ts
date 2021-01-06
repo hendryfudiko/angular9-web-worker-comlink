@@ -8,5 +8,6 @@ export function generateUUID(): string {
 
 export enum HandlerType {
   API = 'API',
-  FRAME = 'FRAME'
+  FRAME = 'FRAME',
+  EVENT = 'EVENT',
 }

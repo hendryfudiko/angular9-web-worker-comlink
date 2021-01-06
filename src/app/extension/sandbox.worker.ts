@@ -1,51 +1,92 @@
 /// <reference lib="webworker" />
 
-import { expose } from 'comlink';
+import { expose, proxy } from 'comlink';
 import { generateUUID, HandlerType } from './utility';
 
-
-async function initEnvironment(sourceCode: string) {
+async function startEnvironment(sourceCode: string) {
   const injector = new Injector();
   const disabled: string[] = ['self', 'globalThis', 'postMessage'];
   const functionResult = new Function(
     'injector',
     ...disabled,
-    `"use strict"; ${sourceCode}; return main(injector)`
+    `"use strict"; ${sourceCode}; return main(injector);`
   );
 
   await functionResult(injector);
 }
 
-const exposedObj = {
-  counter: 0,
-  emit: null,
-  increment() {
-    this.counter++;
-  },
-  async testCb(cb) {
-    let response = await fetch('https://jsonplaceholder.typicode.com/todos/1');
-    response = await response.json();
-    await cb(JSON.stringify(response));
-  },
-  subscribe(
-    cb: (payload: { handler: HandlerType; key: string; data: any }) => any
-  ) {
-    this.emit = cb;
-  },
-  send(handler: HandlerType, propertyKey: string, data: any) {
-    log('send => ', propertyKey, data);
-    return this.emit({ handler, key: propertyKey, data });
-  },
-  async handle(
-    payload: { command: any; workerUniqueId: string; data: any },
-    cb?: (args: any) => void
-  ) {
-    log(payload.command);
+class InvocationManager {
+  static channels: Map<string, InvocationManager> = new Map();
+  protected events = {};
 
-    await initEnvironment(payload.data);
-  },
-};
+  static register(channel: string) {
+    this.channels.set(channel, new InvocationManager());
+    return proxy(this.channels.get(channel));
+  }
 
+  static getAllChannels() {
+    return this.channels;
+  }
+
+  static get(channel: string) {
+    return this.channels.get(channel);
+  }
+
+  subscribe(event: string, fn: (...args: any) => any) {
+    if (!this.events[event]) {
+      this.events[event] = [];
+    }
+    const currentEventIndex = this.events[event].push({ callback: fn });
+
+    return proxy({
+      unsubsribe: () => {
+        this.events[event].splice(currentEventIndex - 1, 1);
+      },
+    });
+  }
+
+  subscribeOnce(event: string, fn: (...args: any) => any) {
+    this.events[event] = [{ callback: fn }];
+  }
+
+  broadcast(event: string, payload: any = {}) {
+    const channels = InvocationManager.getAllChannels();
+
+    channels.forEach((_, channelKey) => {
+      const events = channels.get(channelKey).events[event];
+      if (events && events.length > 0) {
+        events.forEach((evt) => {
+          evt.callback.call(channels.get(channelKey), payload);
+        });
+      }
+    });
+  }
+
+  publish(event: string, payload: any = {}) {
+    if (this.events[event] && this.events[event].length > 0) {
+      this.events[event].forEach((evt) => {
+        evt.callback.call(this, payload);
+      });
+    }
+  }
+}
+
+class WorkerManager {
+  constructor(private invocationManager: InvocationManager) {}
+
+  handler(channel: string) {
+    return InvocationManager.get(channel);
+  }
+
+  async init(payload: string) {
+    // reset all event listener
+    EventManager.registeredEvents = [];
+    // broadcast to all channels
+    this.invocationManager.broadcast('init');
+
+    await startEnvironment(payload);
+  }
+}
 class Injector {
   get(name: string): any {
     return PROVIDERS.get(name);
@@ -53,29 +94,55 @@ class Injector {
 }
 
 abstract class BaseManager {
+  static managerName = '';
   static actions = [];
 
-  readonly handlerType: HandlerType;
+  static invocationManager: InvocationManager;
+
+  static publishMessage(event: string, payload: any) {
+    if (!this.invocationManager) {
+      throw new Error(`Please register InvocationManager !`);
+    }
+    this.invocationManager.publish(event, payload);
+  }
 }
 
 class ApiManager extends BaseManager {
+  static managerName = 'ApiManager';
   static actions = ['get', 'post', 'put', 'delete'];
-
-  readonly handlerType = HandlerType.API;
 
   constructor() {
     super();
-    log('worker constructor - ', this.constructor.name);
+    log('worker constructor - ', ApiManager.managerName);
+
+    ApiManager.invocationManager = InvocationManager.register(HandlerType.API);
+    ApiManager.invocationManager.subscribe('hello', (payload: any) => {
+      log('ApiManager `hello` subscribe => ', payload);
+    });
   }
 }
 
 class Frame {
   readonly frameId = generateUUID();
-  constructor(readonly title, readonly handlerType: HandlerType) {}
+
+  constructor(readonly title: string) {}
+
+  enableEventHandler() {
+    // handle event handler with EventManager
+    EventManager.handleEvent(this.frameId);
+
+    FrameManager.invocationManager.subscribeOnce(
+      `event-${this.frameId}`,
+      (payload) => {
+        EventManager.publishMessage(`handle-event-${this.frameId}`, payload);
+      }
+    );
+  }
 
   render(payload: string) {
     log('render from => ', Frame.name);
-    exposedObj.send(this.handlerType, 'render', {
+
+    FrameManager.invocationManager.publish('render', {
       id: this.frameId,
       body: payload,
     });
@@ -83,15 +150,64 @@ class Frame {
 }
 
 class FrameManager extends BaseManager {
-  readonly handlerType = HandlerType.FRAME;
+  static managerName = 'FrameManager';
 
   constructor() {
     super();
-    log('worker constructor - ', this.constructor.name);
+    log('worker constructor - ', FrameManager.managerName);
+
+    FrameManager.invocationManager = InvocationManager.register(
+      HandlerType.FRAME
+    );
+    FrameManager.invocationManager.subscribe('hello', (payload: any) => {
+      log('FrameManager `hello` subscribe => ', payload);
+    });
   }
 
   create(title: string): Frame {
-    return new Frame(title, this.handlerType);
+    return new Frame(title);
+  }
+}
+
+class EventManager extends BaseManager {
+  static managerName = 'EventManager';
+  static registeredEvents: any[] = [];
+
+  constructor() {
+    super();
+    log('worker constructor - ', EventManager.managerName);
+
+    EventManager.invocationManager = InvocationManager.register(
+      HandlerType.EVENT
+    );
+    EventManager.invocationManager.subscribe('hello', (payload: any) => {
+      log('EventManager `hello` subscribe => ', payload);
+    });
+  }
+
+  static handleEvent(id: string) {
+    EventManager.invocationManager.subscribeOnce(
+      `handle-event-${id}`,
+      async (payload: any) => {
+        log(`EventManager handle event ${id}=> `);
+        const elementId = payload.elementId;
+        const event = payload.event;
+
+        EventManager.registeredEvents
+          .filter((evt) => evt.elementId === elementId && evt.event === event)
+          .forEach((evt) => {
+            evt.callback();
+          });
+      }
+    );
+  }
+
+  register(elementId: string, event: string, fn: (event) => any) {
+    EventManager.registeredEvents.push({
+      elementId,
+      event,
+      callback: fn,
+    });
   }
 }
 
@@ -116,11 +232,17 @@ function withProxy<T extends BaseManager>(
 
       if (actions.indexOf(String(propertyKey)) > -1) {
         return (...args: any) => {
-          return exposedObj.send(
-            instance.handlerType,
-            String(propertyKey),
-            args
-          );
+          // instance.publishMessage('hello', 'qwe');
+          return new Promise((resolve, reject) => {
+            (model as any).publishMessage('invoke', {
+              property: String(propertyKey),
+              data: args,
+            });
+
+            (model as any).invocationManager.subscribeOnce('invo', (data) => {
+              resolve(data);
+            });
+          });
         };
       }
 
@@ -143,8 +265,9 @@ function log(...args: any) {
 }
 
 const PROVIDERS = new Map<string, any>();
-PROVIDERS.set('FrameManager', withProxy(FrameManager));
-PROVIDERS.set('ApiManager', withProxy(ApiManager));
+PROVIDERS.set(FrameManager.managerName, withProxy(FrameManager));
+PROVIDERS.set(ApiManager.managerName, withProxy(ApiManager));
+PROVIDERS.set(EventManager.managerName, withProxy(EventManager));
 
 // expose({ MyClass, exposedObj });
-expose(exposedObj);
+expose(new WorkerManager(new InvocationManager()));

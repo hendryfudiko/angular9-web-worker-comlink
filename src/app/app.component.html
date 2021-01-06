@@ -2,9 +2,9 @@
   console.log('=== BEGIN ===');
   console.log(Injector);
   const ApiManager = Injector.get('ApiManager');
-  console.log('= GET with await');
-  // ApiManager.get('https://jsonplaceholder.typicode.com/todos/1').then(a => console.log(a));
-  const result = await ApiManager.get('https://jsonplaceholder.typicode.com/todos/1', 'qwe');
+  console.log('= GET with await => ', ApiManager);
+  const id = Math.round((Math.random() * 10) + 1);
+  const result = await ApiManager.get('https://jsonplaceholder.typicode.com/todos/' + id);
   console.log('fetch result => ', result);
   // ApiManager.post('/users/me', 'qwe');
   // console.log(ApiManager.get);
@@ -16,21 +16,52 @@
   //   .then((result) => {
   //     console.log('.then result:', result);
   //   });
+
+  const EventManagerWidget1 = Injector.get('EventManager');
+  EventManagerWidget1.register('test-btn', 'click', async () => {
+    console.log('from test-btn');
+    const result = await ApiManager.get('https://jsonplaceholder.typicode.com/todos/1')
+    console.log(result);
+  });
+
+  EventManagerWidget1.register('hello', 'click', async () => {
+    console.log('from hello');
+  });
+
   const FrameManager = Injector.get('FrameManager');
   console.log('= Frame render');
   const widget = FrameManager.create('widget 1');
+  widget.enableEventHandler();
   widget.render(`
     <div class="well well-lg">
       <form>
         <div class="form-group">
           <label for="exampleInputEmail1">Email address</label>
-          <input type="email" class="form-control" id="exampleInputEmail1" placeholder="Email">
+          <input type="email" class="form-control" id="exampleInputEmail1" placeholder="Email" value="${result.title}">
         </div>
         <div class="form-group">
           <label for="exampleInputPassword1">Password</label>
           <input type="password" class="form-control" id="exampleInputPassword1" placeholder="Password">
         </div>
-        <button type="submit" class="btn btn-default">Submit</button>
+        <button (click)="qqqq" id="test-btn" type="button" class="btn btn-default">Submit</button>
+      </form>
+    </div>
+  `);
+
+  const widget2 = FrameManager.create('widget 2');
+  widget2.enableEventHandler();
+  widget2.render(`
+    <div class="well well-lg">
+      <form>
+        <div class="form-group">
+          <label for="exampleInputEmail2">Email address</label>
+          <input type="email" class="form-control" id="exampleInputEmail2" placeholder="Email" value="${result.title}">
+        </div>
+        <div class="form-group">
+          <label for="exampleInputPassword2">Password</label>
+          <input type="password" class="form-control" id="exampleInputPassword2" placeholder="Password">
+        </div>
+        <button id="hello" (click)="qwe" type="button" class="btn btn-default">Submit</button>
       </form>
     </div>
   `);
@@ -42,16 +73,16 @@
   // });
   // console.log('==== END ====');
 }` -->
-<div class="container-fluid">
+<div class="container-fluid" style="padding-top: 15px">
   <div class="row">
     <div class="col-xs-12">
       <div class="form-group">
-        <textarea
-          class="form-control"
-          rows="30"
+        <ngx-monaco-editor
+          style="height: 500px"
+          [options]="editorOptions"
           [(ngModel)]="sourceCode"
-          (ngModelChange)="changeText($event)"
-        ></textarea>
+          (ngModelChange)="changeText($event)">
+        </ngx-monaco-editor>
       </div>
       <button class="btn btn-primary btn-block btn-lg" (click)="test()">
         Hit Me !
@@ -63,7 +94,10 @@
 
   <div class="row">
     <div class="col-xs-12">
-      <div [innerHTML]="htmlContent | safe: 'html'"></div>
+      <div #frameContainer></div>
+      <!-- <ng-container *ngFor="let frame of frames">
+        <div [id]="frame.id" [innerHTML]="frame.content | safe: 'html'"></div>
+      </ng-container> -->
     </div>
   </div>
 </div>
