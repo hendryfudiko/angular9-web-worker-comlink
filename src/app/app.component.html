@@ -1,8 +1,6 @@
 <!-- `async function main(Injector) {
   console.log('=== BEGIN ===');
-  console.log(Injector);
   const ApiManager = Injector.get('ApiManager');
-  console.log('= GET with await => ', ApiManager);
   const id = Math.round((Math.random() * 10) + 1);
   const result = await ApiManager.get('https://jsonplaceholder.typicode.com/todos/' + id);
   console.log('fetch result => ', result);
@@ -15,23 +13,18 @@
   //   .then((response) => response.content)
   //   .then((result) => {
   //     console.log('.then result:', result);
-  //   });
 
-  const EventManagerWidget1 = Injector.get('EventManager');
-  EventManagerWidget1.register('test-btn', 'click', async () => {
-    console.log('from test-btn');
+  const FrameManager = Injector.get('FrameManager');
+
+  const widget = FrameManager.create('widget 1');
+  widget.event('qwe', async () => {
     const result = await ApiManager.get('https://jsonplaceholder.typicode.com/todos/1')
     console.log(result);
   });
-
-  EventManagerWidget1.register('hello', 'click', async () => {
-    console.log('from hello');
+  widget.event('qqqq', async () => {
+    const result = await ApiManager.get('https://jsonplaceholder.typicode.com/todos/1')
+    console.log(result);
   });
-
-  const FrameManager = Injector.get('FrameManager');
-  console.log('= Frame render');
-  const widget = FrameManager.create('widget 1');
-  widget.enableEventHandler();
   widget.render(`
     <div class="well well-lg">
       <form>
@@ -49,7 +42,6 @@
   `);
 
   const widget2 = FrameManager.create('widget 2');
-  widget2.enableEventHandler();
   widget2.render(`
     <div class="well well-lg">
       <form>
@@ -65,13 +57,6 @@
       </form>
     </div>
   `);
-  // const EventManager = Injector.inject('EventManager');
-  // console.log(EventManager.events);
-  // EventManager.register('btnClick', function (event) {
-  //   console.log('this line is executed by custom script');
-  //   console.log('Button is clicked', event);
-  // });
-  // console.log('==== END ====');
 }` -->
 <div class="container-fluid" style="padding-top: 15px">
   <div class="row">

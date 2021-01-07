@@ -113,7 +113,6 @@ class ApiManager extends BaseManager {
 
   constructor() {
     super();
-    log('worker constructor - ', ApiManager.managerName);
 
     ApiManager.invocationManager = InvocationManager.register(HandlerType.API);
     ApiManager.invocationManager.subscribe('hello', (payload: any) => {
@@ -127,21 +126,13 @@ class Frame {
 
   constructor(readonly title: string) {}
 
-  enableEventHandler() {
-    // handle event handler with EventManager
+  event(event: string, fn: (event) => any) {
+    FrameManager.handleFrameEvent(this.frameId);
     EventManager.handleEvent(this.frameId);
-
-    FrameManager.invocationManager.subscribeOnce(
-      `event-${this.frameId}`,
-      (payload) => {
-        EventManager.publishMessage(`handle-event-${this.frameId}`, payload);
-      }
-    );
+    EventManager.addEvent(event, fn);
   }
 
   render(payload: string) {
-    log('render from => ', Frame.name);
-
     FrameManager.invocationManager.publish('render', {
       id: this.frameId,
       body: payload,
@@ -154,14 +145,22 @@ class FrameManager extends BaseManager {
 
   constructor() {
     super();
-    log('worker constructor - ', FrameManager.managerName);
-
     FrameManager.invocationManager = InvocationManager.register(
       HandlerType.FRAME
     );
     FrameManager.invocationManager.subscribe('hello', (payload: any) => {
       log('FrameManager `hello` subscribe => ', payload);
     });
+    EventManager.init();
+  }
+
+  static handleFrameEvent(frameId: string) {
+    FrameManager.invocationManager.subscribeOnce(
+      `event-${frameId}`,
+      (payload) => {
+        EventManager.publishMessage(`handle-event-${frameId}`, payload);
+      }
+    );
   }
 
   create(title: string): Frame {
@@ -170,18 +169,18 @@ class FrameManager extends BaseManager {
 }
 
 class EventManager extends BaseManager {
-  static managerName = 'EventManager';
   static registeredEvents: any[] = [];
 
-  constructor() {
-    super();
-    log('worker constructor - ', EventManager.managerName);
-
+  static init() {
     EventManager.invocationManager = InvocationManager.register(
       HandlerType.EVENT
     );
-    EventManager.invocationManager.subscribe('hello', (payload: any) => {
-      log('EventManager `hello` subscribe => ', payload);
+  }
+
+  static addEvent(event: string, fn: (event) => any) {
+    EventManager.registeredEvents.push({
+      event,
+      callback: fn,
     });
   }
 
@@ -189,25 +188,17 @@ class EventManager extends BaseManager {
     EventManager.invocationManager.subscribeOnce(
       `handle-event-${id}`,
       async (payload: any) => {
-        log(`EventManager handle event ${id}=> `);
-        const elementId = payload.elementId;
+        log(`Event Frame - ${id}`);
+        log(`Event Name  - ${payload.event}`);
         const event = payload.event;
 
         EventManager.registeredEvents
-          .filter((evt) => evt.elementId === elementId && evt.event === event)
+          .filter((evt) => evt.event === event)
           .forEach((evt) => {
             evt.callback();
           });
       }
     );
-  }
-
-  register(elementId: string, event: string, fn: (event) => any) {
-    EventManager.registeredEvents.push({
-      elementId,
-      event,
-      callback: fn,
-    });
   }
 }
 
@@ -267,7 +258,6 @@ function log(...args: any) {
 const PROVIDERS = new Map<string, any>();
 PROVIDERS.set(FrameManager.managerName, withProxy(FrameManager));
 PROVIDERS.set(ApiManager.managerName, withProxy(ApiManager));
-PROVIDERS.set(EventManager.managerName, withProxy(EventManager));
 
 // expose({ MyClass, exposedObj });
 expose(new WorkerManager(new InvocationManager()));

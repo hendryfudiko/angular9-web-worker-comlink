@@ -3,6 +3,9 @@ import { proxy as proxyValue, releaseProxy, Remote, wrap } from 'comlink';
 import { Subject } from 'rxjs';
 import { generateUUID, HandlerType } from './utility';
 
+function log(...args: any) {
+  console.log('> main |', ...args);
+}
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   async get(url) {
@@ -51,7 +54,8 @@ export class ApiServiceExtension extends BaseExtension {
     proxyHandler.subscribe(
       'invoke',
       proxyValue(async (payload) => {
-        console.log('> ApiService Extension => ', payload);
+        log('> ApiService Extension => ', payload);
+
         try {
           const [url] = payload.data;
           const property = payload.property;
@@ -89,12 +93,10 @@ export class EventServiceExtension extends BaseExtension {
         .map((match: RegExpMatchArray) => match[1])
         .forEach(async (attribute: string) => {
           el.addEventListener(attribute, (event: any) => {
-            const funcName = el.getAttribute(`(${attribute})`);
-            console.log('funcName => ', funcName, proxyHandler);
-            console.log('aaa => ', event.target.id);
+            const functionName = el.getAttribute(`(${attribute})`);
+            log('event fired => ', functionName);
             proxyHandler.publish(`event-${id}`, {
-              elementId: event.target.id,
-              event: attribute,
+              event: functionName
             });
           });
         });
@@ -133,7 +135,7 @@ export class FrameServiceExtension extends BaseExtension {
     proxyHandler.subscribe(
       'render',
       proxyValue((payload: { id: string; title: string; body: string }) => {
-        console.log('> FrameService Extension => ');
+        log('> FrameService Extension - ', payload.id);
 
         const frame = this.generateHTMLContent(payload.id, payload.body);
         this.eventServiceExtension.register({
